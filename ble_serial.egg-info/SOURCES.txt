@@ -1,0 +1,5 @@
+ble_serial.c
+ble_serial.egg-info/PKG-INFO
+ble_serial.egg-info/SOURCES.txt
+ble_serial.egg-info/dependency_links.txt
+ble_serial.egg-info/top_level.txt
