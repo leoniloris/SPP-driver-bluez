@@ -1,7 +1,3 @@
-#ifdef HAVE_CONFIG_H
-#include <config.h>
-#endif
-
 #include <errno.h>
 #include <getopt.h>
 #include <stdbool.h>
@@ -30,6 +26,8 @@
 #define UUID_SERIAL_SERVICE 0x1102
 #define UUID_TX 0x1103
 #define UUID_RX 0x1104
+
+#define DEFAULT_MTU 27
 
 #define ATT_CID 4
 
@@ -67,6 +65,8 @@ struct server {
   bool tx_notification_enabled;
 };
 
+struct server *server;
+
 static const char test_device_name[] =
     "Very Long Test Device Name For Testing ";
 static bool verbose = false;
@@ -98,7 +98,7 @@ static void gap_device_name_read_cb(struct gatt_db_attribute *attrib,
                                     unsigned int id, uint16_t offset,
                                     uint8_t opcode, struct bt_att *att,
                                     void *user_data) {
-  struct server *server = user_data;
+  // struct server *server = user_data;
   uint8_t error = 0;
   size_t len = 0;
   const uint8_t *value = NULL;
@@ -124,7 +124,7 @@ static void gap_device_name_write_cb(struct gatt_db_attribute *attrib,
                                      const uint8_t *value, size_t len,
                                      uint8_t opcode, struct bt_att *att,
                                      void *user_data) {
-  struct server *server = user_data;
+  // struct server *server = user_data;
   uint8_t error = 0;
 
   PRLOG("GAP Device Name Write called\n");
@@ -190,7 +190,7 @@ static void gatt_svc_chngd_ccc_read_cb(struct gatt_db_attribute *attrib,
                                        unsigned int id, uint16_t offset,
                                        uint8_t opcode, struct bt_att *att,
                                        void *user_data) {
-  struct server *server = user_data;
+  // struct server *server = user_data;
   uint8_t value[2];
 
   PRLOG("Service Changed CCC Read called\n");
@@ -206,7 +206,7 @@ static void gatt_svc_chngd_ccc_write_cb(struct gatt_db_attribute *attrib,
                                         const uint8_t *value, size_t len,
                                         uint8_t opcode, struct bt_att *att,
                                         void *user_data) {
-  struct server *server = user_data;
+  // struct server *server = user_data;
   uint8_t ecode = 0;
 
   PRLOG("Service Changed CCC Write called\n");
@@ -239,7 +239,7 @@ static void tx_descriptor_read_cb(struct gatt_db_attribute *attrib,
                                   unsigned int id, uint16_t offset,
                                   uint8_t opcode, struct bt_att *att,
                                   void *user_data) {
-  struct server *server = user_data;
+  // struct server *server = user_data;
   uint8_t value[2];
 
   value[0] = server->tx_notification_enabled ? 0x01 : 0x00;
@@ -253,7 +253,7 @@ static void tx_descriptor_write_cb(struct gatt_db_attribute *attrib,
                                    const uint8_t *value, size_t len,
                                    uint8_t opcode, struct bt_att *att,
                                    void *user_data) {
-  struct server *server = user_data;
+  // struct server *server = user_data;
   uint8_t ecode = 0;
 
   if (!value || len != 2) {
@@ -316,14 +316,14 @@ static void confirm_write(struct gatt_db_attribute *attr, int err,
   exit(1);
 }
 
-static void populate_gap_service(struct server *server) {
+static void populate_gap_service(struct server *_server) {
   bt_uuid_t uuid;
   struct gatt_db_attribute *service, *tmp;
   uint16_t appearance;
 
   /* Add the GAP service */
   bt_uuid16_create(&uuid, UUID_GAP);
-  service = gatt_db_add_service(server->db, &uuid, true, 6);
+  service = gatt_db_add_service(_server->db, &uuid, true, 6);
 
   /*
    * Device Name characteristic. Make the value dynamically read and
@@ -333,12 +333,12 @@ static void populate_gap_service(struct server *server) {
   gatt_db_service_add_characteristic(
       service, &uuid, BT_ATT_PERM_READ | BT_ATT_PERM_WRITE,
       BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_EXT_PROP,
-      gap_device_name_read_cb, gap_device_name_write_cb, server);
+      gap_device_name_read_cb, gap_device_name_write_cb, _server);
 
   bt_uuid16_create(&uuid, GATT_CHARAC_EXT_PROPER_UUID);
   gatt_db_service_add_descriptor(service, &uuid, BT_ATT_PERM_READ,
                                  gap_device_name_ext_prop_read_cb, NULL,
-                                 server);
+                                 _server);
 
   /*
    * Appearance characteristic. Reads and writes should obtain the value
@@ -347,7 +347,7 @@ static void populate_gap_service(struct server *server) {
   bt_uuid16_create(&uuid, GATT_CHARAC_APPEARANCE);
   tmp = gatt_db_service_add_characteristic(service, &uuid, BT_ATT_PERM_READ,
                                            BT_GATT_CHRC_PROP_READ, NULL, NULL,
-                                           server);
+                                           _server);
 
   /*
    * Write the appearance value to the database, since we're not using a
@@ -360,68 +360,68 @@ static void populate_gap_service(struct server *server) {
   gatt_db_service_set_active(service, true);
 }
 
-static void populate_gatt_service(struct server *server) {
+static void populate_gatt_service(struct server *_server) {
   bt_uuid_t uuid;
   struct gatt_db_attribute *service, *svc_chngd;
 
   /* Add the GATT service */
   bt_uuid16_create(&uuid, UUID_GATT);
-  service = gatt_db_add_service(server->db, &uuid, true, 4);
+  service = gatt_db_add_service(_server->db, &uuid, true, 4);
 
   bt_uuid16_create(&uuid, GATT_CHARAC_SERVICE_CHANGED);
   svc_chngd = gatt_db_service_add_characteristic(
       service, &uuid, BT_ATT_PERM_READ,
       BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_INDICATE,
-      gatt_service_changed_cb, NULL, server);
-  server->gatt_svc_chngd_handle = gatt_db_attribute_get_handle(svc_chngd);
+      gatt_service_changed_cb, NULL, _server);
+  _server->gatt_svc_chngd_handle = gatt_db_attribute_get_handle(svc_chngd);
 
   bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
   gatt_db_service_add_descriptor(
       service, &uuid, BT_ATT_PERM_READ | BT_ATT_PERM_WRITE,
-      gatt_svc_chngd_ccc_read_cb, gatt_svc_chngd_ccc_write_cb, server);
+      gatt_svc_chngd_ccc_read_cb, gatt_svc_chngd_ccc_write_cb, _server);
 
   gatt_db_service_set_active(service, true);
 }
 
-static void populate_serial_service(struct server *server) {
+static void populate_serial_service(struct server *_server) {
   bt_uuid_t uuid;
   struct gatt_db_attribute *service, *dummy_attribute;
 
   // Serial service
   bt_uuid16_create(&uuid, UUID_SERIAL_SERVICE);
-  service = gatt_db_add_service(server->db, &uuid, true, 8);
-  server->serial_attibute_handle = gatt_db_attribute_get_handle(service);
+  service = gatt_db_add_service(_server->db, &uuid, true, 8);
+  _server->serial_attibute_handle = gatt_db_attribute_get_handle(service);
 
   // Tx characteristic
   bt_uuid16_create(&uuid, UUID_TX);
   dummy_attribute = gatt_db_service_add_characteristic(
       service, &uuid, BT_ATT_PERM_NONE, BT_GATT_CHRC_PROP_NOTIFY, NULL, NULL,
       NULL);
-  server->tx_attribute_handle = gatt_db_attribute_get_handle(dummy_attribute);
+  _server->tx_attribute_handle = gatt_db_attribute_get_handle(dummy_attribute);
 
   bt_uuid16_create(&uuid, GATT_CLIENT_CHARAC_CFG_UUID);
   gatt_db_service_add_descriptor(
       service, &uuid, BT_ATT_PERM_READ | BT_ATT_PERM_WRITE,
-      tx_descriptor_read_cb, tx_descriptor_write_cb, server);
+      tx_descriptor_read_cb, tx_descriptor_write_cb, _server);
 
   // Rx characteristic
   bt_uuid16_create(&uuid, UUID_RX);
   gatt_db_service_add_characteristic(service, &uuid, BT_ATT_PERM_WRITE,
                                      BT_GATT_CHRC_PROP_WRITE, NULL,
-                                     rx_characteristic_cb, server);
+                                     rx_characteristic_cb, _server);
 
-  if (server->visibility)
+  if (_server->visibility)
     gatt_db_service_set_active(service, true);
 }
 
-static void populate_db(struct server *server) {
-  populate_gap_service(server);
-  populate_gatt_service(server);
-  populate_serial_service(server);
+static void populate_db(struct server *_server) {
+  populate_gap_service(_server);
+  populate_gatt_service(_server);
+  populate_serial_service(_server);
 }
 
 static struct server *server_create(int fd, uint16_t mtu, bool visibility) {
-  struct server *server;
+  // struct server *server;
   size_t name_len = strlen(test_device_name);
 
   server = new0(struct server, 1);
@@ -490,9 +490,9 @@ fail:
   return NULL;
 }
 
-static void server_destroy(struct server *server) {
-  bt_gatt_server_unref(server->gatt);
-  gatt_db_unref(server->db);
+static void server_destroy(struct server *_server) {
+  bt_gatt_server_unref(_server->gatt);
+  gatt_db_unref(_server->db);
 }
 
 static void usage(void) {
@@ -606,7 +606,7 @@ static bool parse_args(char *str, int expected_argc, char **argv, int *argc) {
 
 static void conf_cb(void *user_data) { PRLOG("Received confirmation\n"); }
 
-static void cmd_notify(struct server *server, char *cmd_str) {
+static void cmd_notify(struct server *_server, char *cmd_str) {
   int opt, i;
   char *argvbuf[516];
   char **argv = argvbuf;
@@ -679,10 +679,10 @@ static void cmd_notify(struct server *server, char *cmd_str) {
   }
 
   if (indicate) {
-    if (!bt_gatt_server_send_indication(server->gatt, handle, value, length,
+    if (!bt_gatt_server_send_indication(_server->gatt, handle, value, length,
                                         conf_cb, NULL, NULL))
       printf("Failed to initiate indication\n");
-  } else if (!bt_gatt_server_send_notification(server->gatt, handle, value,
+  } else if (!bt_gatt_server_send_notification(_server->gatt, handle, value,
                                                length))
     printf("Failed to initiate notification\n");
 
@@ -690,7 +690,7 @@ done:
   free(value);
 }
 
-static void cmd_set_service_visibility(struct server *server, char *cmd_str) {
+static void cmd_set_service_visibility(struct server *_server, char *cmd_str) {
   bool enable;
   uint8_t pdu[4];
   struct gatt_db_attribute *attr;
@@ -707,24 +707,24 @@ static void cmd_set_service_visibility(struct server *server, char *cmd_str) {
     return;
   }
 
-  if (enable == server->visibility) {
+  if (enable == _server->visibility) {
     printf("Service already %s\n", enable ? "visible" : "hidden");
     return;
   }
 
-  server->visibility = enable;
-  attr = gatt_db_get_attribute(server->db, server->serial_attibute_handle);
-  gatt_db_service_set_active(attr, server->visibility);
+  _server->visibility = enable;
+  attr = gatt_db_get_attribute(_server->db, _server->serial_attibute_handle);
+  gatt_db_service_set_active(attr, _server->visibility);
 
-  if (!server->svc_chngd_enabled)
+  if (!_server->svc_chngd_enabled)
     return;
 
-  put_le16(server->serial_attibute_handle, pdu);
-  put_le16(server->serial_attibute_handle + 7, pdu + 2);
+  put_le16(_server->serial_attibute_handle, pdu);
+  put_le16(_server->serial_attibute_handle + 7, pdu + 2);
 
-  server->tx_notification_enabled = false;
+  _server->tx_notification_enabled = false;
 
-  bt_gatt_server_send_indication(server->gatt, server->gatt_svc_chngd_handle,
+  bt_gatt_server_send_indication(_server->gatt, _server->gatt_svc_chngd_handle,
                                  pdu, 4, conf_cb, NULL, NULL);
 }
 
@@ -739,7 +739,7 @@ static void print_uuid(const bt_uuid_t *uuid) {
 }
 
 static void print_incl(struct gatt_db_attribute *attr, void *user_data) {
-  struct server *server = user_data;
+  // struct server *server = user_data;
   uint16_t handle, start, end;
   struct gatt_db_attribute *service;
   bt_uuid_t uuid;
@@ -786,7 +786,7 @@ static void print_chrc(struct gatt_db_attribute *attr, void *user_data) {
 }
 
 static void print_service(struct gatt_db_attribute *attr, void *user_data) {
-  struct server *server = user_data;
+  // struct server *server = user_data;
   uint16_t start, end;
   bool primary;
   bt_uuid_t uuid;
@@ -805,8 +805,8 @@ static void print_service(struct gatt_db_attribute *attr, void *user_data) {
   printf("\n");
 }
 
-static void cmd_services(struct server *server, char *cmd_str) {
-  gatt_db_foreach_service(server->db, NULL, print_service, server);
+static void cmd_services(struct server *_server, char *cmd_str) {
+  gatt_db_foreach_service(_server->db, NULL, print_service, _server);
 }
 
 static bool convert_sign_key(char *optarg, uint8_t key[16]) {
@@ -843,7 +843,7 @@ static bool remote_counter(uint32_t *sign_cnt, void *user_data) {
   return true;
 }
 
-static void cmd_set_sign_key(struct server *server, char *cmd_str) {
+static void cmd_set_sign_key(struct server *_server, char *cmd_str) {
   char *argv[3];
   int argc = 0;
   uint8_t key[16];
@@ -862,29 +862,29 @@ static void cmd_set_sign_key(struct server *server, char *cmd_str) {
 
   if (!strcmp(argv[0], "-c") || !strcmp(argv[0], "--sign-key")) {
     if (convert_sign_key(argv[1], key))
-      bt_att_set_remote_key(server->att, key, remote_counter, server);
+      bt_att_set_remote_key(_server->att, key, remote_counter, _server);
   } else
     set_sign_key_usage();
 }
 
-static void cmd_help(struct server *server, char *cmd_str);
+static void cmd_help(struct server *_server, char *cmd_str);
 
-typedef void (*command_func_t)(struct server *server, char *cmd_str);
+typedef void (*command_func_t)(struct server *_server, char *cmd_str);
 
 static struct {
   char *cmd;
   command_func_t func;
   char *doc;
-} command[] = {
-    {"help", cmd_help, "\tDisplay help message"},
-    {"notify", cmd_notify, "\tSend handle-value notification"},
-    {"set-serial-visibility", cmd_set_service_visibility, "\tHide/Unhide Serial Service"},
-    {"services", cmd_services, "\tEnumerate all services"},
-    {"set-sign-key", cmd_set_sign_key,
-     "\tSet remote signing key for signed write command"},
-    {}};
+} command[] = {{"help", cmd_help, "\tDisplay help message"},
+               {"notify", cmd_notify, "\tSend handle-value notification"},
+               {"set-serial-visibility", cmd_set_service_visibility,
+                "\tHide/Unhide Serial Service"},
+               {"services", cmd_services, "\tEnumerate all services"},
+               {"set-sign-key", cmd_set_sign_key,
+                "\tSet remote signing key for signed write command"},
+               {}};
 
-static void cmd_help(struct server *server, char *cmd_str) {
+static void cmd_help(struct server *_server, char *cmd_str) {
   int i;
 
   printf("Commands:\n");
@@ -897,7 +897,7 @@ static void prompt_read_cb(int fd, uint32_t events, void *user_data) {
   size_t len = 0;
   char *line = NULL;
   char *cmd = NULL, *args;
-  struct server *server = user_data;
+  // struct server *server = user_data;
   int i;
 
   if (events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR)) {
@@ -952,6 +952,23 @@ static void signal_cb(int signum, void *user_data) {
   }
 }
 
+// int send_data(uint8_t *data, uint16_t size) {
+//   PRLOG("Sending notification, %d bytes\n", size);
+//   do {
+//     send_res = bt_gatt_server_send_notification(
+//         pCharac->server->gatt, pCharac->handle, pTx,
+//         mMIN(send_len, mBLE_TRANSFER_SIZE));
+
+//     if (send_res) {
+//       pTx += mBLE_TRANSFER_SIZE;
+//       send_len -= mBLE_TRANSFER_SIZE;
+//     } else {
+//       PRLOG("  Notify write failed...wait\n");
+//       usleep(mTX_WAIT);
+//     }
+//   } while (send_len > 0);
+// }
+
 int main(int argc, char *argv[]) {
   int opt;
   bdaddr_t src_addr;
@@ -959,10 +976,9 @@ int main(int argc, char *argv[]) {
   int fd;
   int sec = BT_SECURITY_LOW;
   uint8_t src_type = BDADDR_LE_PUBLIC;
-  uint16_t mtu = 0;
+  uint16_t mtu = DEFAULT_MTU;
   sigset_t mask;
   bool visibility = false;
-  struct server *server;
 
   while ((opt = getopt_long(argc, argv, "+hvrs:t:m:i:", main_options, NULL)) !=
          -1) {
@@ -1067,7 +1083,7 @@ int main(int argc, char *argv[]) {
   //   return EXIT_FAILURE;
   // }
   if (0) {
-  	prompt_read_cb(fd, 0, NULL);
+    prompt_read_cb(fd, 0, NULL);
   }
 
   printf("Running GATT server\n");
