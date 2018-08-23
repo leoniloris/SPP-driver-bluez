@@ -463,7 +463,7 @@ static struct server *server_create(int fd, uint16_t mtu, bool visibility) {
     goto fail;
   }
 
-  server->gatt = bt_gatt_server_new(server->db, server->att, mtu, 0);
+  server->gatt = bt_gatt_server_new(server->db, server->att, mtu);
   if (!server->gatt) {
     fprintf(stderr, "Failed to create GATT server\n");
     goto fail;
